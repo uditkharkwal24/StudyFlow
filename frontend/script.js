@@ -1,4 +1,11 @@
 // DOM Elements
+window.onload = function () {
+  const theme = localStorage.getItem("theme");
+
+  if (theme === "dark") {
+    document.body.classList.add("dark");
+  }
+};
 const navButtons = document.querySelectorAll('.nav-btn');
 const sections = {
   assignments: document.getElementById('assignmentsSection'),
@@ -38,7 +45,7 @@ let assignments = [];
 
 // Initialize
 function init() {
-  loadAssignments(); // 🔥 IMPORTANT
+  loadAssignments(); 
   setInterval(updateTimeRemaining, 60000);
 }
 
@@ -46,19 +53,33 @@ function init() {
 navButtons.forEach(btn => {
   btn.addEventListener('click', () => {
     const sectionName = btn.dataset.section;
-    
+
     // Update active button
     navButtons.forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    
+
     // Show/hide sections
     Object.entries(sections).forEach(([name, section]) => {
       if (name === sectionName) {
         section.classList.remove('hidden');
+
+        if (name === "roadmap") {
+          // loadRoadmap();
+        }
+
       } else {
         section.classList.add('hidden');
       }
     });
+
+    // ✅ ADD THIS PART (ADMIN PANEL LOAD)
+    if (sectionName === "admin") {
+      document.getElementById("adminSection").classList.remove("hidden");
+      loadTeacherRequests();
+    } else {
+      document.getElementById("adminSection").classList.add("hidden");
+    }
+
   });
 });
 
@@ -101,29 +122,43 @@ assignmentForm.addEventListener('submit', async (e) => {
   e.preventDefault();
 
   const topic = document.getElementById('topic').value;
-const dueDate = document.getElementById('dueDate').value;
-const note = document.getElementById('note').value;
+  const dueDate = document.getElementById('dueDate').value;
+  const course = document.getElementById("assignCourse").value;
+  const section = document.getElementById("assignSection").value;
+  const teacher = localStorage.getItem("loggedInUser");
+  const file = document.getElementById("assignmentFile").files[0];
 
-  const user = localStorage.getItem("loggedInUser");
+  if (!file) {
+    showToast("Please upload a PDF", "error");
+    return;
+  }
 
-  await fetch("http://localhost:8080/addAssignment", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      topic: topic,
-      dueDate: dueDate,
-      note: note,
-      userId: user
-    })
-  });
+  const formData = new FormData();
 
-  showToast("Assignment added successfully!");
-  assignmentForm.reset();
-  assignmentModal.classList.remove('active');
+  formData.append("file", file);
+  formData.append("topic", topic);
+  formData.append("dueDate", dueDate);
+  formData.append("course", course);
+  formData.append("section", section);
+  formData.append("createdBy", teacher);
 
-  loadAssignments(); // reload from backend
+  try {
+    const res = await fetch("http://localhost:8080/uploadAssignment", {
+      method: "POST",
+      body: formData
+    });
+
+    const msg = await res.text();
+
+    showToast(msg);
+    assignmentForm.reset();
+    assignmentModal.classList.remove('active');
+
+    loadAssignments();
+
+  } catch (err) {
+    showToast("Upload failed", "error");
+  }
 });
 
 // Render Assignments
@@ -133,43 +168,149 @@ function renderAssignments() {
     emptyAssignments.style.display = 'block';
     return;
   }
-  
+
   emptyAssignments.style.display = 'none';
-  
+
   assignmentsList.innerHTML = assignments.map(assignment => {
     const timeInfo = getTimeRemaining(assignment.dueDate);
-    
+
     return `
-      <div class="assignment-card">
-        <div class="assignment-header">
-          <span class="assignment-topic">${escapeHtml(assignment.topic)}</span>
-          <span class="assignment-time ${timeInfo.status}">${timeInfo.text}</span>
+      <div class="assignment-card" style="
+        background: linear-gradient(145deg, #1e293b, #0f172a);
+        padding:18px;
+        margin-bottom:20px;
+        border-radius:14px;
+        border:1px solid rgba(255,255,255,0.06);
+        box-shadow:0 6px 25px rgba(0,0,0,0.35);
+      ">
+
+        <!-- HEADER -->
+        <div style="
+          display:flex;
+          justify-content:space-between;
+          align-items:center;
+          margin-bottom:10px;
+        ">
+          <span style="
+            font-size:18px;
+            font-weight:600;
+            color:#f8fafc;
+          ">
+            ${assignment.topic}
+          </span>
+
+          <span style="
+            background:#facc15;
+            color:#1e293b;
+            padding:5px 10px;
+            border-radius:20px;
+            font-size:12px;
+            font-weight:500;
+          ">
+            ${timeInfo.text}
+          </span>
         </div>
-        <div class="assignment-due">Due: ${formatDate(assignment.dueDate)}</div>
-        ${assignment.note ? `<div class="assignment-note">${escapeHtml(assignment.note)}</div>` : ''}
-        <button class="delete-btn" data-id="${assignment.id}">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 6h18"/>
-            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
-            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-          </svg>
-          Delete
-        </button>
+
+        <!-- DUE -->
+        <div style="
+          color:#94a3b8;
+          font-size:13px;
+          margin-bottom:12px;
+        ">
+          Due: ${formatDate(assignment.dueDate)}
+        </div>
+
+        ${assignment.note ? `
+          <div style="margin-bottom:10px; color:#cbd5f5;">
+            ${escapeHtml(assignment.note)}
+          </div>
+        ` : ""}
+
+        <!-- BUTTON GROUP -->
+        <div style="
+          display:flex;
+          gap:10px;
+          flex-wrap:wrap;
+          margin-top:10px;
+        ">
+
+          ${assignment.filePath ? `
+            <a href="http://localhost:8080/${assignment.filePath}" target="_blank" style="
+              padding:6px 12px;
+              background:#6366f1;
+              color:white;
+              border-radius:6px;
+              text-decoration:none;
+              font-size:13px;
+            ">
+              View 📄
+            </a>
+          ` : ""}
+
+          ${localStorage.getItem("userRole") === "student" ? `
+            <div id="submission-area-${assignment.id}">
+              <p style="font-size:12px; color:#94a3b8;">Checking submission...</p>
+            </div>
+          ` : ""}
+
+          ${localStorage.getItem("userRole") === "teacher" ? `
+            <button class="delete-btn" data-id="${assignment.id}" style="
+              background:#ef4444;
+              color:white;
+              border:none;
+              padding:6px 12px;
+              border-radius:6px;
+              cursor:pointer;
+              font-size:13px;
+            ">
+              Delete
+            </button>
+
+            <button onclick="viewSubmissions(${assignment.id})" style="
+              background:#3b82f6;
+              color:white;
+              border:none;
+              padding:6px 12px;
+              border-radius:6px;
+              cursor:pointer;
+              font-size:13px;
+            ">
+              Submissions 📥
+            </button>
+          ` : ""}
+
+        </div>
+
       </div>
     `;
   }).join('');
-  updatePendingCount();
+
+  setTimeout(() => {
+    assignments.forEach(a => {
+      if (localStorage.getItem("userRole") === "student") {
+        checkSubmissionStatus(a.id);
+      }
+    });
+  }, 0);
 }
 async function loadAssignments() {
   const user = localStorage.getItem("loggedInUser");
 
   if (!user) return;
 
-  const res = await fetch(`http://localhost:8080/getAssignments/${user}`);
-  const data = await res.json();
+  try {
+    const res = await fetch(
+      `http://localhost:8080/getAssignmentsForUser?username=${encodeURIComponent(user)}`
+    );
 
-  assignments = data;
-  renderAssignments();
+    const data = await res.json();
+
+    assignments = data;
+    renderAssignments();
+
+  } catch (err) {
+    console.error("Error loading assignments", err);
+  }
 }
 
 // Calculate time remaining
@@ -225,13 +366,6 @@ async function deleteAssignment(id) {
   showToast('Assignment deleted');
   loadAssignments(); // reload from backend
 }
-
-// Save assignments to localStorage
-function saveAssignments() {
-  localStorage.setItem('assignments', JSON.stringify(assignments));
-}
-
-// Update time remaining periodically
 function updateTimeRemaining() {
   renderAssignments();
 }
@@ -269,27 +403,86 @@ function escapeHtml(text) {
 }
 function checkLoginOnLoad() {
   const user = localStorage.getItem("loggedInUser");
+  const adminEmail = "uditkharkwal24@gmail.com";
 
   const registerForm = document.getElementById("registerForm");
   const loginForm = document.getElementById("loginForm");
   const tabs = document.querySelector(".modal-tabs");
+  const adminBtn = document.querySelector('[data-section="admin"]');
 
   if (user) {
+    document.getElementById("registerForm").style.display = "none";
+document.getElementById("loginForm").style.display = "none";
+document.querySelector(".modal-tabs").style.display = "none";
+document.getElementById("logoutSection").style.display = "block";
     hideOverlay();
+
     const profileBtn = document.getElementById("profileBtn");
-    profileBtn.innerHTML = user.charAt(0).toUpperCase();
+    const username = localStorage.getItem("loggedInUser");
+profileBtn.innerHTML = username.charAt(0).toUpperCase();
+
     registerForm.style.display = "none";
     loginForm.style.display = "none";
     tabs.style.display = "none";
 
-    showLogoutButton(user);
+    // ✅ ADMIN VISIBILITY CONTROL
+    if (adminBtn) {
+      if (user === adminEmail) {
+        adminBtn.style.display = "flex";
+      } else {
+        adminBtn.style.display = "none";
+      }
+    }
 
+    
+const addBtn = document.getElementById("addAssignmentBtn");
+
+fetch(`http://localhost:8080/getUser/${user}`)
+  .then(res => res.json())
+  .then(data => {
+    localStorage.setItem("userRole", data.role); 
+    if (data.role !== "teacher") {
+      addBtn.style.display = "none";
+    } else {
+      addBtn.style.display = "block";
+    }
+    const roadmapBtn = document.getElementById("navRoadmap");
+const practiceBtn = document.getElementById("navPractice");
+
+const adminBtn = document.querySelector('[data-section="admin"]');
+
+if (data.role === "teacher") {
+  if (roadmapBtn) roadmapBtn.style.display = "none";
+  if (practiceBtn) practiceBtn.style.display = "none";
+}
+
+// ✅ ADMIN ONLY (your email)
+if (data.username === "uditkharkwal24@gmail.com") {
+  if (adminBtn) adminBtn.style.display = "flex";
+} else {
+  if (adminBtn) adminBtn.style.display = "none";
+}
+const roadmapSection = document.getElementById("roadmapSection");
+const practiceSection = document.getElementById("practiceSection");
+
+if (data.role === "teacher") {
+  if (roadmapSection) roadmapSection.style.display = "none";
+  if (practiceSection) practiceSection.style.display = "none";
+}
+  });
   } else {
+    document.getElementById("logoutSection").style.display = "none";
     showOverlay();
+
+    // ❗ hide admin if not logged in
+    if (adminBtn) {
+      adminBtn.style.display = "none";
+    }
   }
 }
 // Initialize app
 checkLoginOnLoad();
+checkProfileCompletion();
 init();
 // Tab switching
 const registerTab = document.getElementById("registerTab");
@@ -316,39 +509,47 @@ loginTab.addEventListener("click", () => {
 // Register form submit
 const registerFormElement = document.getElementById("registerForm");
 
-registerFormElement.addEventListener("submit", async (e) => {
-  e.preventDefault();
+document.addEventListener("submit", async function (e) {
 
-  const username = document.getElementById("regUsername").value;
-  const password = document.getElementById("regPassword").value;
+  if (e.target.id === "registerForm") {
+    e.preventDefault();
 
-  try {
-    const response = await fetch("http://localhost:8080/register", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        username: username,
-        password: password
-      })
-    });
+    const username = document.getElementById("regUsername").value;
+    const password = document.getElementById("regPassword").value;
+    const role = selectedRole;
 
-    if (response.ok) {
-      const result = await response.text();
+    try {
+      const res = await fetch("http://localhost:8080/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          username,
+          password,
+          role
+        })
+      });
 
-      if (result.includes("successful")) {
-      profileModal.classList.remove("active");
-      registerFormElement.reset();
-      showToast(`Welcome, ${username}! Registered successfully`);
-      } else {
-      showToast(result, "error");
+      const result = await res.text();
+
+// ✅ HANDLE DUPLICATE USERNAME
+if (result === "Username already exists") {
+  showToast("⚠️ Username already taken", "error");
+  return;
 }
-    }
 
-  } catch (error) {
-    console.error(error);
-    showToast("Server error!");
+alert(result);
+
+      // auto login after student register
+      if (role === "student") {
+        localStorage.setItem("loggedInUser", username);
+        location.reload();
+      }
+
+    } catch (err) {
+      alert("Registration failed");
+    }
   }
 });
 // Login form submit
@@ -373,17 +574,27 @@ loginFormElement.addEventListener("submit", async (e) => {
     });
 
     const result = await response.text();
+if (result.toLowerCase().includes("success")) {
 
-   if (result.toLowerCase().includes("success")) {
-      localStorage.setItem("loggedInUser", username);
-      loginFormElement.reset();
-      showToast(`Welcome back, ${username}!`);
-      profileModal.classList.remove("active");
-      checkLoginOnLoad();
-      loadAssignments(); 
-    } else {
-      showToast("Invalid username or password!", "error");
-    }
+  localStorage.setItem("loggedInUser", username);
+  loginFormElement.reset();
+
+  showToast(`Welcome back, ${username}!`);
+  profileModal.classList.remove("active");
+  checkLoginOnLoad();
+  loadAssignments();
+  checkProfileCompletion();
+
+} 
+else if (result.toLowerCase().includes("not approved")) {
+
+  showToast("⏳ Your teacher account is pending approval", "error");
+
+} 
+else {
+
+  showToast(result, "error");
+}
 
   } catch (error) {
     console.error(error);
@@ -401,6 +612,10 @@ function showLogoutButton(username) {
   btn.id = "logoutBtn";
   btn.className = "submit-btn";
   btn.textContent = `Logout (${username})`;
+  btn.style.position = "fixed";
+btn.style.bottom = "80px";
+btn.style.right = "20px";
+btn.style.zIndex = "999";
 
   btn.addEventListener("click", () => {
     localStorage.removeItem("loggedInUser");
@@ -409,7 +624,7 @@ function showLogoutButton(username) {
     location.reload(); // refresh app
   });
 
-  modal.appendChild(btn);
+  document.body.appendChild(btn);
 }
 function showOverlay() {
   document.getElementById("loginOverlay").classList.remove("hidden");
@@ -421,4 +636,505 @@ function hideOverlay() {
 
 function openProfileModal() {
   profileModal.classList.add("active");
+}
+async function loadRoadmap() {
+  const container = document.getElementById("roadmapContent");
+  // ✅ check if roadmap already saved
+const saved = localStorage.getItem("roadmap");
+
+if (saved) {
+  container.innerHTML = saved;
+  return;
+}
+// ✅ prevent multiple API calls
+if (container.dataset.loaded === "true") return;
+container.dataset.loaded = "true";
+
+  container.innerHTML = "<p>Loading roadmap...</p>";
+
+  try {
+    const res = await fetch("http://localhost:8080/getRoadmap");
+    let data = await res.text();
+
+    // Split by year sections (clean now)
+    const sections = data.split(/\n(?=\d+(?:st|nd|rd|th)\s+Year:)/);
+
+    let formatted = "";
+
+    sections.forEach(section => {
+      const lines = section
+        .split("\n")
+        .map(l => l.trim())
+        .filter(l => l !== "");
+
+      if (lines.length === 0) return;
+
+      const title = lines[0];
+      const points = lines.slice(1);
+
+      formatted += `
+        <div style="
+          background: white;
+          padding: 15px;
+          margin-bottom: 15px;
+          border-radius: 10px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        ">
+          <h3 style="color:#6366f1; margin-bottom:10px;">
+            ${title}
+          </h3>
+          <ul style="padding-left:20px;">
+            ${points.map(p => `<li>${p.replace("-", "").trim()}</li>`).join("")}
+          </ul>
+        </div>
+      `;
+    });
+
+    container.innerHTML = formatted;
+    // ✅ save roadmap for future use
+// ✅ only save if valid roadmap
+if (!data.includes("error") && formatted.trim() !== "") {
+  localStorage.setItem("roadmap", formatted);
+}
+
+  } catch (err) {
+  container.innerHTML = `
+    <p style="color:red;">
+      Roadmap unavailable (API limit reached). Try again later.
+    </p>
+  `;
+}
+}
+function toggleDarkMode(event) {
+  const circle = document.createElement("div");
+
+  const x = event.clientX;
+  const y = event.clientY;
+
+  // Calculate max distance to screen corners
+  const maxX = Math.max(x, window.innerWidth - x);
+  const maxY = Math.max(y, window.innerHeight - y);
+  const radius = Math.sqrt(maxX * maxX + maxY * maxY);
+
+  circle.style.position = "fixed";
+  circle.style.borderRadius = "50%";
+  circle.style.background = document.body.classList.contains("dark")
+    ? "#ffffff"
+    : "#0f172a";
+  circle.style.width = "20px";
+  circle.style.height = "20px";
+  circle.style.left = x + "px";
+  circle.style.top = y + "px";
+  circle.style.transform = "scale(0)";
+  circle.style.transition = "transform 0.6s ease-out";
+  circle.style.zIndex = "9999";
+  circle.style.pointerEvents = "none";
+
+  document.body.appendChild(circle);
+
+  // Scale based on screen size
+  setTimeout(() => {
+    circle.style.transform = `scale(${radius / 10})`;
+  }, 10);
+
+  // Toggle theme
+  setTimeout(() => {
+    const isDark = document.body.classList.toggle("dark");
+    localStorage.setItem("theme", isDark ? "dark" : "light");
+
+    const btn = document.querySelector(".theme-btn");
+    btn.textContent = isDark ? "☀️" : "🌙";
+  }, 200);
+
+  // Remove ripple
+  setTimeout(() => {
+    circle.remove();
+  }, 700);
+}
+// 🌐 Google Login Setup
+window.onload = function () {
+  const theme = localStorage.getItem("theme");
+
+  if (theme === "dark") {
+    document.body.classList.add("dark");
+  }
+
+  google.accounts.id.initialize({
+    client_id: "223647633006-8c0v0bge3ncmhkur4cr830j8crd4abl3.apps.googleusercontent.com",
+    callback: handleGoogleLogin
+  });
+
+  google.accounts.id.renderButton(
+    document.getElementById("googleSignInDiv"),
+    {
+      theme: "outline",
+      size: "large",
+      width: "100%"
+    }
+  );
+  // ✅ Google button for Register section
+google.accounts.id.renderButton(
+  document.getElementById("googleRegisterDiv"),
+  {
+    theme: "outline",
+    size: "large",
+    width: "100%"
+  }
+);
+};
+
+async function handleGoogleLogin(response) {
+  const data = parseJwt(response.credential);
+
+  const user = {
+    username: data.email,   // use email as unique id
+    password: "google_user" // dummy password
+  };
+
+  try {
+    const res = await fetch("http://localhost:8080/google-login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(user)
+    });
+
+    const result = await res.text();
+
+    localStorage.setItem("loggedInUser", user.username);
+
+    alert("Logged in as " + user.username);
+    location.reload();
+
+  } catch (err) {
+    alert("Google login failed");
+  }
+}
+
+function parseJwt(token) {
+  const base64Url = token.split('.')[1];
+  const base64 = atob(base64Url);
+  return JSON.parse(base64);
+}
+let selectedRole = "student";
+
+function selectRole(role) {
+  selectedRole = role;
+
+  document.getElementById("roleChoice").style.display = "none";
+  document.getElementById("actualRegisterForm").style.display = "block";
+
+  document.getElementById("loginTab").style.display = "none";
+  document.getElementById("registerTab").style.display = "none";
+}
+function goBackRole() {
+  // hide form
+  document.getElementById("actualRegisterForm").style.display = "none";
+
+  // show role selection
+  document.getElementById("roleChoice").style.display = "block";
+
+  // show tabs again
+  document.getElementById("loginTab").style.display = "block";
+  document.getElementById("registerTab").style.display = "block";
+
+  // reset tab styles (IMPORTANT)
+  document.getElementById("registerTab").classList.add("active");
+  document.getElementById("loginTab").classList.remove("active");
+
+  // also make sure login form is hidden
+  document.getElementById("loginForm").classList.add("hidden");
+}
+async function loadTeacherRequests() {
+  const container = document.getElementById("teacherRequests");
+
+  container.innerHTML = "<p>Loading...</p>";
+
+  try {
+    const res = await fetch("http://localhost:8080/pending-teachers");
+    const data = await res.json();
+
+    if (data.length === 0) {
+      container.innerHTML = "<p>No pending requests</p>";
+      return;
+    }
+
+    let html = "";
+
+    data.forEach(user => {
+      html += `
+        <div style="
+          background:white;
+          padding:10px;
+          margin-bottom:10px;
+          border-radius:8px;
+          box-shadow:0 2px 5px rgba(0,0,0,0.1);
+        ">
+          <p><strong>${user.username}</strong></p>
+
+          <button onclick="approveTeacher(${user.id})" style="
+            padding:6px 10px;
+            background:#22c55e;
+            color:white;
+            border:none;
+            border-radius:6px;
+            cursor:pointer;
+          ">
+            Approve
+          </button>
+        </div>
+      `;
+    });
+
+    container.innerHTML = html;
+
+  } catch (err) {
+    container.innerHTML = "<p>Error loading requests</p>";
+  }
+}
+async function approveTeacher(id) {
+  try {
+    const res = await fetch(`http://localhost:8080/approve-teacher/${id}`, {
+      method: "PUT"
+    });
+
+    const msg = await res.text();
+    alert(msg);
+
+    // reload list after approval
+    loadTeacherRequests();
+
+  } catch (err) {
+    alert("Error approving teacher");
+  }
+}
+async function checkProfileCompletion() {
+  const user = localStorage.getItem("loggedInUser");
+
+  if (!user) return;
+
+  try {
+    const res = await fetch(`http://localhost:8080/getUser/${user}`);
+    const data = await res.json();
+
+    // if fullName is missing → profile not completed
+    if (!data.fullName || data.fullName === "" || data.fullName === null) {
+      document.getElementById("profileSetupModal").classList.add("active");
+
+      // hide student fields if teacher
+      if (data.role === "teacher") {
+        document.getElementById("studentFields").style.display = "none";
+      }
+    }
+
+  } catch (err) {
+    console.log("Profile check failed");
+  }
+}
+function logout() {
+  localStorage.removeItem("loggedInUser");
+
+  showToast("Logged out successfully");
+
+  // reset UI
+  location.reload();
+}
+async function submitProfile() {
+  const user = localStorage.getItem("loggedInUser");
+
+  const fullName = document.getElementById("fullName").value;
+  const course = document.getElementById("course").value;
+  const section = document.getElementById("section").value;
+  const rollNumber = document.getElementById("rollNumber")?.value || null;
+
+  try {
+    const res = await fetch(`http://localhost:8080/updateProfile/${user}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        fullName,
+        course,
+        section,
+        rollNumber
+      })
+    });
+
+    const msg = await res.text();
+    if (msg.toLowerCase().includes("success")) {
+  showToast(msg);
+} else {
+  showToast(msg, "error");
+}
+
+    // ✅ hide popup after saving
+    document.getElementById("profileSetupModal").classList.remove("active");
+
+  } catch (err) {
+    showToast("Error saving profile", "error");
+  }
+}
+async function submitAssignment(assignmentId) {
+
+  const input = document.querySelector(`input[data-id='${assignmentId}']`);
+  const file = input.files[0];
+  const username = localStorage.getItem("loggedInUser");
+
+  if (!file) {
+    showToast("Please select a file", "error");
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("assignmentId", assignmentId);
+  formData.append("studentUsername", username);
+
+  try {
+    const res = await fetch("http://localhost:8080/submitAssignment", {
+      method: "POST",
+      body: formData
+    });
+
+    const msg = await res.text();
+if (msg.toLowerCase().includes("success")) {
+  showToast("Submitted successfully");
+
+  // 🔥 REMOVE INPUT + BUTTON AFTER SUBMIT
+  const input = document.querySelector(`input[data-id='${assignmentId}']`);
+  if (input) {
+    const parent = input.parentElement;
+    parent.innerHTML = `
+      <p style="color:#10b981; font-size:13px;">
+        ✅ Submitted
+      </p>
+    `;
+  }
+} else {
+      showToast(msg, "error");
+    }
+
+  } catch (err) {
+    showToast("Submission failed", "error");
+  }
+}
+async function viewSubmissions(assignmentId) {
+
+  try {
+    const res = await fetch(`http://localhost:8080/getSubmissions/${assignmentId}`);
+    const data = await res.json();
+
+    const container = document.getElementById("submissionList");
+
+    if (data.length === 0) {
+      container.innerHTML = `
+  <div style="
+    text-align:center;
+    padding:30px;
+    color:#94a3b8;
+  ">
+    <p style="font-size:16px;">No submissions yet 😴</p>
+  </div>
+`;
+    } else {
+      container.innerHTML = data.map(sub => `
+  <div style="
+    background:#1e293b;
+    padding:16px;
+    margin-top:15px;
+    border-radius:12px;
+    border:1px solid rgba(255,255,255,0.08);
+    box-shadow:0 4px 15px rgba(0,0,0,0.3);
+    transition:0.2s;
+  ">
+
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      
+      <div>
+        <p style="
+          margin:0;
+          font-weight:600;
+          font-size:15px;
+          color:#f1f5f9;
+        ">
+          ${sub.studentUsername}
+        </p>
+
+        <p style="
+          margin:0;
+          font-size:12px;
+          color:#94a3b8;
+        ">
+          Submitted ✔
+        </p>
+      </div>
+
+      <a href="http://localhost:8080/${sub.filePath}" target="_blank" style="
+        padding:6px 12px;
+        background:#3b82f6;
+        color:white;
+        border-radius:6px;
+        text-decoration:none;
+        font-size:13px;
+      ">
+        Open 📄
+      </a>
+
+    </div>
+
+  </div>
+`).join("");
+    }
+
+    document.getElementById("submissionModal").style.display = "block";
+
+  } catch (err) {
+    alert("Error loading submissions");
+  }
+}
+function closeSubmissionModal() {
+  document.getElementById("submissionModal").style.display = "none";
+}
+async function checkSubmissionStatus(assignmentId) {
+  const username = localStorage.getItem("loggedInUser");
+
+  const container = document.getElementById(`submission-area-${assignmentId}`);
+
+  try {
+    const res = await fetch(
+      `http://localhost:8080/hasSubmitted?assignmentId=${assignmentId}&username=${encodeURIComponent(username)}`
+    );
+
+    const text = await res.text();   // ✅ FIX
+    const submitted = text === "true";  // ✅ FIX
+
+    if (submitted) {
+      container.innerHTML = `
+        <p style="color:#10b981; font-size:13px;">
+          ✅ Submitted
+        </p>
+      `;
+    } else {
+      container.innerHTML = `
+        <input type="file" data-id="${assignmentId}" accept="application/pdf" style="font-size:12px;">
+        <button onclick="submitAssignment(${assignmentId})" style="
+          margin-top:5px;
+          padding:6px 12px;
+          background:#10b981;
+          color:white;
+          border:none;
+          border-radius:6px;
+          cursor:pointer;
+          font-size:13px;
+        ">
+          Submit 📤
+        </button>
+      `;
+    }
+
+  } catch (err) {
+    container.innerHTML = `<p style="color:red;">Error</p>`;
+  }
 }
